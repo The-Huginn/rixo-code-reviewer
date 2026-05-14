@@ -1,0 +1,26 @@
+app:
+  environment: debug
+  host: 0.0.0.0
+  port: 8080
+  max_parallel_sessions: 5
+  max_mcp_concurrent_requests: 3
+
+ai:
+  provider: claude-code-sdk
+  claude_cli_timeout: 900
+
+mcp_api:
+  base_url: ${MCP_API_BASE_URL:http://localhost:8080}
+  # ssl_cert_path: ${MCP_API_SSL_CERT_PATH:}  # set when terminating TLS via a private CA
+
+embedding:
+  endpoint: ${EMBEDDING_ENDPOINT:https://api.openai.com}
+  model: ${EMBEDDING_MODEL:text-embedding-3-large}
+  # ssl_cert_path: ${EMBEDDING_SSL_CERT_PATH:}  # set when serving the endpoint behind a private CA
+  # api_key loaded from LITELLM_API_KEY env var
+
+# Per-deployment review configuration. Edit these lists for your environment.
+# Empty allowed_repositories list means "deny by default" — no PRs reviewed.
+review:
+  allowed_repositories: []
+  ignored_authors: []

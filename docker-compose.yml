@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  rixo-code-reviewer:
+    build:
+      context: ..
+      dockerfile: rixo-code-reviewer/Dockerfile
+      args:
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    container_name: rixo-code-reviewer
+    ports:
+      - "8888:8888"
+    volumes:
+      # Mount credentials (read-only for Claude, read-write for Azure CLI which needs to write logs)
+      - ${HOME}/.claude/.credentials.json:/home/appuser/.claude/.credentials.json:ro
+      - ${HOME}/.azure:/home/appuser/.azure
+      # Mount logs for persistence
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
