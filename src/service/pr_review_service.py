@@ -12,6 +12,7 @@ from src.data import ReviewSummary, ReviewState, ReviewStatus, ReviewResult
 from src.service.batch_publisher import BatchPublisher
 from src.service.cached_file_service import CachedFileService
 from src.service.duplicate_comment_manager import DuplicateCommentManager
+from src.service.indexed_repo_service import IndexedRepoService
 from src.service.pending_comments_pool import PendingCommentsPool
 
 if TYPE_CHECKING:
@@ -53,13 +54,15 @@ class PRReviewService:
             per_file_agents: List["SingleFileAgent"],
             per_pr_agents: List["AllFilesAgent"] = None,
             single_thread_manager: Optional["SingleThreadManagerAgent"] = None,
-            ai_client=None
+            ai_client=None,
+            indexed_repo_service: Optional[IndexedRepoService] = None
     ):
         self.devops = devops_client
         self.per_file_agents = per_file_agents
         self.per_pr_agents = per_pr_agents or []
         self.single_thread_manager = single_thread_manager
         self._ai_client = ai_client
+        self._indexed_repo_service = indexed_repo_service
         self._session_semaphore = asyncio.Semaphore(config.app.max_parallel_sessions)
         self._file_locks = {}
         self._states: Dict[str, ReviewState] = {}
@@ -145,6 +148,18 @@ class PRReviewService:
                         state.completed_at = datetime.now()
                 return ReviewResult(issues=0, vote=VOTE_APPROVE)
 
+            # Check if the PR's repository is indexed in the knowledge base
+            kb_available = True
+            if self._indexed_repo_service and pr_details.repository:
+                kb_available = await self._indexed_repo_service.is_repo_indexed(
+                    pr_details.repository
+                )
+                if not kb_available:
+                    logger.info(
+                        f"[REVIEW] Repository '{pr_details.repository}' not indexed in KB, "
+                        f"skipping KB tools for this review"
+                    )
+
             # Reset vote to signal review has started
             await self._reset_vote(pr_url, pr_details.status)
 
@@ -178,7 +193,8 @@ class PRReviewService:
 
             # Pass ALL bot comments (including resolved) for comprehensive duplicate detection
             await self._run_code_review_agents(
-                pr_url, files, all_bot_comments, file_service
+                pr_url, files, all_bot_comments, file_service,
+                kb_available=kb_available
             )
 
             current_unresolved = await self.devops.get_bot_comments(pr_url, include_resolved=False)
@@ -340,7 +356,7 @@ class PRReviewService:
 
     async def _run_code_review_agents(
             self, pr_url: str, files: List[FileChange], all_bot_comments: List[PRComment],
-            file_service: CachedFileService
+            file_service: CachedFileService, kb_available: bool = True
     ) -> None:
         """
         Run code review agents with enhanced duplicate detection.
@@ -412,7 +428,8 @@ class PRReviewService:
                 agent_name = type(agent).__name__
 
                 await self._review_agent_on_files(
-                    pr_url, agent, active_files, pending_pool, current_iteration, file_service
+                    pr_url, agent, active_files, pending_pool, current_iteration, file_service,
+                    kb_available=kb_available
                 )
 
                 pool_size = len(pending_pool)
@@ -423,7 +440,8 @@ class PRReviewService:
                 logger.info(f"[REVIEW] Running {len(self.per_pr_agents)} per-PR agents...")
 
                 await self._review_pr_parallel(
-                    pr_url, files, pending_pool, current_iteration
+                    pr_url, files, pending_pool, current_iteration,
+                    kb_available=kb_available
                 )
 
                 pool_size = len(pending_pool)
@@ -529,7 +547,8 @@ class PRReviewService:
             files: List[FileChange],
             pending_pool: PendingCommentsPool,
             current_iteration: Optional[int],
-            file_service: CachedFileService
+            file_service: CachedFileService,
+            kb_available: bool = True
     ) -> List[ReviewSummary]:
         agent_name = type(agent).__name__
 
@@ -548,7 +567,8 @@ class PRReviewService:
 
         review_tasks = [
             self._review_single_file(
-                pr_url, agent, file, agent_name, all_file_paths, pending_pool, current_iteration, file_service
+                pr_url, agent, file, agent_name, all_file_paths, pending_pool, current_iteration, file_service,
+                kb_available=kb_available
             )
             for file in files_to_review
         ]
@@ -580,7 +600,8 @@ class PRReviewService:
             all_file_paths: List[str],
             pending_pool: PendingCommentsPool,
             current_iteration: Optional[int],
-            file_service: CachedFileService
+            file_service: CachedFileService,
+            kb_available: bool = True
     ) -> ReviewSummary:
         file_lock = self._get_file_lock(file.path)
 
@@ -593,19 +614,22 @@ class PRReviewService:
                 logger.debug(f"[AGENT-FIRST] {agent_name} reviewing {file.path}")
                 result = await agent.review(
                     file.path, diff, pr_url, file.change_tracking_id, self.devops,
-                    all_file_paths, pending_pool, current_iteration
+                    all_file_paths, pending_pool, current_iteration,
+                    kb_available=kb_available
                 )
                 return result
 
     async def _review_pr_parallel(
             self, pr_url: str, files: List[FileChange],
             pending_pool: PendingCommentsPool,
-            current_iteration: Optional[int] = None
+            current_iteration: Optional[int] = None,
+            kb_available: bool = True
     ) -> List[ReviewSummary]:
         active_files = [f for f in files if f.change_type != CHANGE_TYPE_DELETE]
 
         tasks = [
-            agent.review_pr(pr_url, active_files, self.devops, pending_pool, current_iteration)
+            agent.review_pr(pr_url, active_files, self.devops, pending_pool, current_iteration,
+                            kb_available=kb_available)
             for agent in self.per_pr_agents
         ]
 

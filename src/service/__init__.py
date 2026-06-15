@@ -1,2 +1,3 @@
 from src.service.rule_loader_service import RuleLoaderService
 from src.service.pr_review_service import PRReviewService
+from src.service.indexed_repo_service import IndexedRepoService
