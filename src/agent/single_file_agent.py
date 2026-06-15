@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound=BaseModel)
 
+_KB_TOOLS = [
+    "mcp__rixo-dev-mcp__query_codebase_rag",
+    "mcp__rixo-dev-mcp__query_codebase_cypher",
+]
+
 
 class SingleFileAgent(BaseReviewAgent[T], ABC):
 
@@ -61,7 +66,8 @@ For each clear violation of the ENFORCEMENT RULES, call add_pr_comment immediate
             devops_client: AzureDevOpsClient,
             all_files: list[str] = None,
             pending_pool: Optional[PendingCommentsPool] = None,
-            current_iteration: Optional[int] = None
+            current_iteration: Optional[int] = None,
+            kb_available: bool = True
     ) -> T:
         session_id = self._client.generate_session_id()
         agent_name = self._get_agent_name()
@@ -87,12 +93,16 @@ For each clear violation of the ENFORCEMENT RULES, call add_pr_comment immediate
                 ]
             }
 
+        allowed_tools = ["mcp__rixo-dev-mcp__add_pr_comment"]
+        if kb_available:
+            allowed_tools.extend(_KB_TOOLS)
+
         result = await self._client.structured_completion(
             system_message=system_message,
             user_message=user_message,
             response_schema=self._get_response_schema(),
             session_id=session_id,
-            allowed_tools=["mcp__rixo-dev-mcp__add_pr_comment", "mcp__rixo-dev-mcp__query_codebase_rag", "mcp__rixo-dev-mcp__query_codebase_cypher"],
+            allowed_tools=allowed_tools,
             hooks=hooks
         )
 

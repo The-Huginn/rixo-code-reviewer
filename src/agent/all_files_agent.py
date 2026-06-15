@@ -13,6 +13,11 @@ T = TypeVar('T', bound=BaseModel)
 # Model override for per-PR/architecture agents
 PER_PR_MODEL = "opus"
 
+_KB_TOOLS = [
+    "mcp__rixo-dev-mcp__query_codebase_rag",
+    "mcp__rixo-dev-mcp__query_codebase_cypher",
+]
+
 
 class AllFilesAgent(BaseReviewAgent[T], ABC):
 
@@ -22,7 +27,8 @@ class AllFilesAgent(BaseReviewAgent[T], ABC):
             changed_files: List[FileChange],
             devops_client: AzureDevOpsClient,
             pending_pool: Optional[PendingCommentsPool] = None,
-            current_iteration: Optional[int] = None
+            current_iteration: Optional[int] = None,
+            kb_available: bool = True
     ) -> T:
         agent_name = self._get_agent_name()
         session_id = str(self._client.generate_session_id())
@@ -46,12 +52,16 @@ class AllFilesAgent(BaseReviewAgent[T], ABC):
                 ]
             }
 
+        allowed_tools = ["mcp__rixo-dev-mcp__add_pr_comment", "mcp__rixo-dev-mcp__get_pr_file_diff"]
+        if kb_available:
+            allowed_tools.extend(_KB_TOOLS)
+
         result = await self._client.structured_completion(
             system_message=system_message,
             user_message=user_message,
             response_schema=self._get_response_schema(),
             session_id=session_id,
-            allowed_tools=["mcp__rixo-dev-mcp__add_pr_comment", "mcp__rixo-dev-mcp__get_pr_file_diff", "mcp__rixo-dev-mcp__query_codebase_rag", "mcp__rixo-dev-mcp__query_codebase_cypher"],
+            allowed_tools=allowed_tools,
             model=PER_PR_MODEL,
             hooks=hooks
         )

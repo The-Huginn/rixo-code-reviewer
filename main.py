@@ -20,7 +20,7 @@ from src.client.azure import AzureDevOpsClient
 from src.client.http_client import create_mcp_http_client
 from src.config import config
 from src.controller import healthz_controller, webhook_controller
-from src.service import RuleLoaderService, PRReviewService
+from src.service import RuleLoaderService, PRReviewService, IndexedRepoService
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -84,7 +84,11 @@ async def lifespan(app: FastAPI):
     await asyncio.gather(*[agent.fetch_rules() for agent in all_agents])
     logger.info(f"Rules loaded for {len(all_agents)} agents")
 
-    review_service = PRReviewService(devops_client, per_file_agents, per_pr_agents, single_thread_manager, ai_client)
+    indexed_repo_service = IndexedRepoService(http_client)
+    review_service = PRReviewService(
+        devops_client, per_file_agents, per_pr_agents, single_thread_manager, ai_client,
+        indexed_repo_service=indexed_repo_service
+    )
 
     logger.info(f"Initialized thread manager, {len(per_file_agents)} per-file agents, and {len(per_pr_agents)} per-PR agents")
 
