@@ -33,7 +33,7 @@ class AllFilesAgent(BaseReviewAgent[T], ABC):
         agent_name = self._get_agent_name()
         session_id = str(self._client.generate_session_id())
 
-        system_message = self._build_system_message(agent_name, session_id)
+        system_message = self._build_system_message(agent_name, session_id, kb_available=kb_available)
         user_message = self._build_user_message(pr_url, changed_files)
 
         self._log_session_start(session_id, "for PR review")
@@ -71,8 +71,17 @@ class AllFilesAgent(BaseReviewAgent[T], ABC):
 
         return result
 
-    def _build_system_message(self, agent_name: str, session_id: str) -> str:
-        base_prompt = self._build_base_system_prompt(agent_name, session_id)
+    def _build_system_message(self, agent_name: str, session_id: str, kb_available: bool = True) -> str:
+        base_prompt = self._build_base_system_prompt(agent_name, session_id, kb_available=kb_available)
+
+        kb_tools_section = ""
+        kb_guidance_section = ""
+        if kb_available:
+            kb_tools_section = (
+                "\n- query_codebase_rag(query, query_context, repo_name, time_budget): Query codebase for broader context (agentic, slower)"
+                "\n- query_codebase_cypher(query, repo_name): Fast structured queries for relationships and patterns"
+            )
+            kb_guidance_section = f"\n\n{RAG_QUERY_GUIDANCE}\n\n{CYPHER_QUERY_GUIDANCE}"
 
         return f"""{base_prompt}
 
@@ -80,13 +89,7 @@ class AllFilesAgent(BaseReviewAgent[T], ABC):
 
 **Available Tools:**
 - get_pr_file_diff(pr_url, file_path): Retrieve diff for a specific file
-- add_pr_comment(pr_url, file_path, line_start, comment, change_tracking_id): Post inline comment
-- query_codebase_rag(query, query_context, repo_name, time_budget): Query codebase for broader context (agentic, slower)
-- query_codebase_cypher(query, repo_name): Fast structured queries for relationships and patterns
-
-{RAG_QUERY_GUIDANCE}
-
-{CYPHER_QUERY_GUIDANCE}
+- add_pr_comment(pr_url, file_path, line_start, comment, change_tracking_id): Post inline comment{kb_tools_section}{kb_guidance_section}
 
 **Review Strategy:**
 1. Use get_pr_file_diff() to fetch diffs for files you need to review

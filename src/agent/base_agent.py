@@ -39,8 +39,15 @@ class BaseReviewAgent(ABC, Generic[T]):
     def _get_rule_groups(self) -> List[str]:
         pass
 
-    def _build_base_system_prompt(self, agent_name: str, session_id: str) -> str:
+    def _build_base_system_prompt(self, agent_name: str, session_id: str, kb_available: bool = True) -> str:
         comment_format = get_comment_format_instruction(agent_name, session_id)
+
+        review_instructions = CRITICAL_REVIEW_INSTRUCTIONS
+        if not kb_available:
+            review_instructions = CRITICAL_REVIEW_INSTRUCTIONS.replace(
+                "- IF you're INFERRING or ARE UNCERTAIN about context (e.g., \"this looks like a client DTO\"), you MUST call query_codebase_rag\n",
+                ""
+            )
 
         return f"""You are a RixoAgent code reviewer specializing in {self._get_specialty()}.
 
@@ -53,7 +60,7 @@ STRICTLY Enforce ALL rules mentioned in this section and report ONLY violations 
 
 === END OF ENFORCEMENT RULES ===
 
-{CRITICAL_REVIEW_INSTRUCTIONS}
+{review_instructions}
 
 {comment_format}"""
 

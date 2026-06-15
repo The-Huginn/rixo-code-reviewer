@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, Optional
 
 import httpx
 
@@ -15,7 +15,7 @@ class IndexedRepoService:
         self.http_client = http_client
         self.base_url = config.mcp_api.base_url
 
-    async def get_indexed_repositories(self) -> List[str]:
+    async def get_indexed_repositories(self) -> Optional[List[str]]:
         try:
             response = await self.http_client.get(
                 f"{self.base_url}/api/repositories"
@@ -27,8 +27,10 @@ class IndexedRepoService:
             return repos
         except Exception as e:
             logger.warning(f"Failed to fetch indexed repositories: {e}")
-            return []
+            return None
 
     async def is_repo_indexed(self, repo_name: str) -> bool:
         repos = await self.get_indexed_repositories()
+        if repos is None:
+            return True
         return repo_name in repos

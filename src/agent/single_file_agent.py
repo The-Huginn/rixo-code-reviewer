@@ -39,21 +39,24 @@ class SingleFileAgent(BaseReviewAgent[T], ABC):
             return True
         return bool(re.search(pattern, file_path))
 
-    def _build_system_message(self, agent_name: str, session_id: str) -> str:
-        base_prompt = self._build_base_system_prompt(agent_name, session_id)
+    def _build_system_message(self, agent_name: str, session_id: str, kb_available: bool = True) -> str:
+        base_prompt = self._build_base_system_prompt(agent_name, session_id, kb_available=kb_available)
+
+        kb_tools_section = ""
+        kb_guidance_section = ""
+        if kb_available:
+            kb_tools_section = (
+                "\n- query_codebase_rag(query, query_context, repo_name, time_budget): Query codebase for broader context (agentic, slower)"
+                "\n- query_codebase_cypher(query, repo_name): Fast structured queries for relationships and patterns"
+            )
+            kb_guidance_section = f"\n\n{RAG_QUERY_GUIDANCE}\n\n{CYPHER_QUERY_GUIDANCE}"
 
         return f"""{base_prompt}
 
 {SINGLE_FILE_CONTEXT_NOTICE}
 
 **Available Tools:**
-- add_pr_comment(pr_url, file_path, line, comment, changeTrackingId): Post inline comment to PR
-- query_codebase_rag(query, query_context, repo_name, time_budget): Query codebase for broader context (agentic, slower)
-- query_codebase_cypher(query, repo_name): Fast structured queries for relationships and patterns
-
-{RAG_QUERY_GUIDANCE}
-
-{CYPHER_QUERY_GUIDANCE}
+- add_pr_comment(pr_url, file_path, line, comment, changeTrackingId): Post inline comment to PR{kb_tools_section}{kb_guidance_section}
 
 For each clear violation of the ENFORCEMENT RULES, call add_pr_comment immediately with the formatted comment including metadata footer."""
 
@@ -72,7 +75,7 @@ For each clear violation of the ENFORCEMENT RULES, call add_pr_comment immediate
         session_id = self._client.generate_session_id()
         agent_name = self._get_agent_name()
 
-        system_message = self._build_system_message(agent_name, session_id)
+        system_message = self._build_system_message(agent_name, session_id, kb_available=kb_available)
         user_message = self._build_file_review_message(
             file_path, diff, pr_url, change_tracking_id, all_files
         )
